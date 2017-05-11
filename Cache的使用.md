@@ -115,7 +115,6 @@ map.isExpired(e, now)获取到的缓存是否过期。
         }
       }
     }
-
 ~~~
 
 drainRecencyQueue();
@@ -261,3 +260,27 @@ entry.getValueReference().isLoading()主要判断是不是有
 ~~~
 
 我们可以看到这个方法为了防止高并发，所以进入这个方法的时候，加锁了 lock();同一时刻，只有一个线程执行。
+
+##### LRU回收策略
+
+在缓存实现类中维护了两个双链表Queue，分别为：AccessQueue以及WriteQueue，当添加Entry的时候，将Entry添加到AccessQueue以及WriteQueue末尾。当读取Entry的时候，将Entry添加到AccessQueue的末尾。每次更新一个Entry，则将Entry添加到WriteQueue的末尾。所以每次调用缓存方法之前，都看Entry过期没有，一旦过期，就将该Entry从这两个Queue上和Cache中移除。清理代码如下：
+
+~~~java
+ @GuardedBy("this")
+    void expireEntries(long now) {
+      drainRecencyQueue();
+
+      ReferenceEntry<K, V> e;
+      while ((e = writeQueue.peek()) != null && map.isExpired(e, now)) {
+        if (!removeEntry(e, e.getHash(), RemovalCause.EXPIRED)) {
+          throw new AssertionError();
+        }
+      }
+      while ((e = accessQueue.peek()) != null && map.isExpired(e, now)) {
+        if (!removeEntry(e, e.getHash(), RemovalCause.EXPIRED)) {
+          throw new AssertionError();
+        }
+      }
+    }
+~~~
+
